@@ -18,7 +18,7 @@ flowchart TB
     subgraph "Stellar ledger"
         REG[["KeyLeaseRegistry<br/>services · leases · escrow"]]
         TOK[["SEP-41 token<br/>native SAC or custom"]]
-        EV[["Contract events<br/>lease_created · lease_settled · lease_revoked"]]
+        EV[["Contract events<br/>lease_created · lease_cancelled · lease_settled · lease_revoked"]]
     end
 
     DEV -- "create_lease (auth: consumer)" --> REG
@@ -36,7 +36,7 @@ A pure Rust Soroban contract. It is the only component that can move value.
 | Module | Role |
 | --- | --- |
 | `lib.rs` | Entry points, `contractmeta!`, upgrade, lifecycle documentation. |
-| `types.rs` | `Service`, `Lease`, `LeaseStatus`. |
+| `types.rs` | `Service`, `Lease`, `ServiceStats`, `LeaseStatus`. |
 | `storage.rs` | `DataKey` layout, instance/persistent split, duration-aware TTL policy. |
 | `events.rs` | Typed `#[contractevent]` payloads for every transition. |
 | `errors.rs` | Stable error codes (part of the ABI). |
@@ -65,7 +65,7 @@ standard Stellar tooling:
 | Consumer | How it reads the protocol |
 | --- | --- |
 | Provider request path | `get_lease` over Soroban RPC (cached for a short TTL), or a local projection built from the event stream. |
-| Accounting / dashboards | `stellar events`, Horizon or an indexer subscribing to `lease_created` / `lease_settled` / `lease_revoked`. |
+| Accounting / dashboards | `stellar events`, Horizon or an indexer subscribing to `lease_created` / `lease_cancelled` / `lease_settled` / `lease_revoked`. |
 | CLI tooling | `stellar contract invoke` for writes and reads (reads need any funded `--source-account`). |
 
 See [Integration](integration.md) for the concrete verification pipeline.
@@ -228,6 +228,9 @@ claims to represent, and the consumer always has an exit.
 | `ServiceCount`, `LeaseCount` | instance | same as instance |
 | `Service(u64)` | persistent | extended on save and by `bump_service` (≈30 days) |
 | `Lease(u64)` | persistent | extended for the lease's remaining term **plus** the 24h grace window and a one-day read buffer, or by `bump_lease` |
+| `ServiceStats(u64)` | persistent | extended on settlement only (≈30 days); derived data, so aging out loses a convenience counter, not money |
+| `LeaseRevoked(u64)` | persistent | written when a consumer reclaims, given the same horizon as its lease in that transaction, so a readable lease always has a readable marker |
+| `CancelRequest(u64)` | persistent | pending early-cancellation request; standard ~30-day TTL, removed on withdraw/reject/approve |
 
 ### What extends a TTL, and what does not
 
@@ -238,10 +241,14 @@ calls extend anything:
 `create_lease`, `settle_lease`, `revoke_expired_lease`, `bump_service` and
 `bump_lease` — and, since PR #152, `set_token` only when it actually changes the
 configured token. Every read-only view — `get_service`, `get_lease`,
-`lease_status`, `remaining_calls`, `locked_balance` — is pure, so a simulation of
-a view costs instructions and no rent. At the ledger where an extension is due,
-`get_lease` estimates at 113 stroops (all instructions) against 48,798 for
-`bump_lease`, of which 48,684 is persistent rent.
+`lease_status`, `remaining_calls`, `locked_balance`, `service_stats` — is pure,
+so a simulation of a view costs instructions and no rent. In particular
+`lease_status` consulting the revocation marker and `service_stats` reading the
+settlement counters both extend nothing: each of those entries is sized by the
+write that created it, and a marker is never left alive longer than the lease it
+describes. At the ledger where an extension is due, `get_lease` estimates at 113
+stroops (all instructions) against 48,798 for `bump_lease`, of which 48,684 is
+persistent rent.
 
 Because reads stopped bumping, state that is only ever looked at has to be kept
 alive deliberately, and `create_lease` therefore extends the service it leases
