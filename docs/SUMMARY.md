@@ -4,6 +4,7 @@
 
 - [Introduction](introduction.md)
 - [Architecture](architecture.md)
+- [Glossary](glossary.md)
 
 ## Protocol
 
@@ -28,6 +29,7 @@
 ## Project
 
 - [Design: time-locked upgrades](design/upgrade-timelock.md)
+- [Design: early cancellation](design/early-cancellation.md)
 - [Deployments](deployments.md)
 - Design notes
   - [Provider staking and slashing (#137)](design/137-provider-staking.md)
