@@ -1,8 +1,9 @@
 use soroban_sdk::contracterror;
 
-/// Contract-level error codes returned by [`crate::KeyLeaseRegistry`].
-///
-/// Codes are stable and start at 1 (`0` is reserved by the host for success).
+/** Contract-level error codes returned by [`crate::KeyLeaseRegistry`].
+ * Codes are stable and start at 1 (`0` is reserved by the host for success).
+ * New codes must be appended; codes are part of the ABI.
+ */
 #[contracterror]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 #[repr(u32)]
@@ -62,4 +63,10 @@ pub enum Error {
     /// A page size outside `1..=MAX_PAGE_SIZE`, so serving it would read an
     /// unbounded number of ledger entries in one transaction.
     InvalidLimit = 24,
+    /// No early-cancellation request exists for the lease.
+    CancellationNotRequested = 25,
+    /// The lease already has a pending early-cancellation request.
+    CancellationAlreadyRequested = 26,
+    /// Early cancellation is only available before the lease expires.
+    LeaseExpired = 27,
 }
